@@ -1,0 +1,56 @@
+# PlatformIO
+.pio/
+.pioenvs/
+.piolibdeps/
+libdeps/
+
+# Build artifacts
+build/
+*.bin
+*.elf
+*.map
+*.hex
+*.o
+*.a
+
+# IDE / editor
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+.idea/
+*.code-workspace
+
+# OS / temp
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+.cache/
+
+# Python helpers
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+secrets/
+**/secrets/
+**/include/secrets.h
+**/src/secrets.h
+**/credentials.h
+**/config.local.h
+**/*secret*.json
+**/*credentials*.json
+*.pem
+*.key
+*.crt
+*.p12
+
+# Serial logs / local output
+*.log
+logs/
