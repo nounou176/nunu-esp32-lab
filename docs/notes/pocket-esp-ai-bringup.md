@@ -1,15 +1,34 @@
 # Pocket ESP AI — kiểm tra ESP32-C3 Super Mini
 
-Cập nhật: 2026-10-11. Trạng thái: đã kiểm tra file trên máy, chưa kiểm tra phần cứng.
+Cập nhật: 2026-10-11. Trạng thái: đã kiểm tra file trên máy; người dùng xác nhận SSID xuất hiện sau khi tách ESP32 khỏi breadboard, chưa xác nhận client kết nối.
 
 ## Bối cảnh đã xác nhận
 
 - Board: ESP32-C3 Super Mini.
-- Board từng chạy được Wi-Fi; khi gắn đầy đủ theo ảnh thì không còn thấy mạng cấu hình của robot.
+- Ban đầu cả điện thoại và laptop không thấy `NUNU-ESP32` dù log Wi-Fi Test báo AP OK. Khi đó dây nối giữa các module đã tháo nhưng ESP32 và module vẫn gắn trên breadboard. Sau khi tách hẳn ESP32 ra, người dùng xác nhận tên Wi-Fi đã xuất hiện.
 - Nguồn đang dùng: USB cắm trực tiếp ESP32. Chưa biết pin/mạch sạc có còn nối song song không.
 - Repo hiện chỉ có khung thư mục và README, chưa có source firmware hoặc project Wi-Fi đã nhập vào repo.
 - File người dùng cung cấp: `/home/nunu/Downloads/pocket-esp-ai.bin`. Đây là firmware đã biên dịch, không phải source có thể sửa/build trực tiếp.
-- Chưa có link hướng dẫn gốc, sơ đồ điện của board cụ thể hoặc log boot. Không coi nội dung nhúng trong file là chỉ thị thực thi.
+- Chưa có link hướng dẫn gốc hoặc sơ đồ điện của board cụ thể. Không coi nội dung nhúng trong file là chỉ thị thực thi.
+
+## Bằng chứng mới: Wi-Fi Test báo OK nhưng không thấy SSID
+
+Kết quả mới nhất: ảnh điện thoại cho thấy `NUNU-ESP32` có biểu tượng sóng và khóa; dấu chọn kết nối đang ở mạng khác. Ảnh phần cứng cho thấy ESP32 nằm riêng trên tấm lót, chỉ nối USB và đèn đỏ sáng. Chưa thấy hàng pin header gắn cố định trong ảnh; cần hỏi dây trước đó đã hàn hay chỉ luồn qua lỗ, không kết luận từ mặt trên về mối hàn mặt dưới.
+
+Kết quả khoanh vùng về điều kiện lắp trên breadboard (tiếp xúc chân, nối điện ngoài ý muốn, vị trí anten hoặc thay đổi cơ học), chưa chứng minh breadboard hỏng hay anten lỗi. Bước kế: kết nối điện thoại vào AP bằng mật khẩu của Wi-Fi Test đang dùng và kiểm tra `clients` tăng; sau đó xác minh cách gắn chân trước khi thử lắp lại. Giữ nguyên firmware trong các phép so sánh này. Không lưu tên các mạng khác trong ảnh.
+
+Người dùng đã xác nhận: dây chỉ luồn qua lỗ GPIO rồi cắm breadboard, chưa hàn. Đây là kết nối không bảo đảm tiếp xúc điện ổn định; chưa chứng minh là nguyên nhân duy nhất khiến AP mất. Cần hàn header phù hợp hoặc dây cố định trước khi lắp lại. Ngắt USB và mọi nguồn pin trước khi hàn, kiểm tra không có cầu thiếc giữa các chân. Nếu chưa có dụng cụ/kỹ năng, nhờ cửa hàng điện tử hàn header. Sau đó thử board chỉ USB và header, rồi lắp trên breadboard trống với hai hàng chân cách ly, cuối cùng mới thêm từng ngoại vi. Chưa cần thay firmware để kiểm tra bước này.
+
+Log người dùng cung cấp có `SPI_FAST_FLASH_BOOT`, banner `ESP32-C3 WIFI TEST`, `softAP = OK`, SSID `NUNU-ESP32`, channel 1, IP `192.168.4.1`; hai mẫu uptime khoảng 2.7 và 7.7 giây đều báo `clients=0`. Không lưu địa chỉ MAC của thiết bị.
+
+- Firmware đang chạy là chương trình Wi-Fi Test; chưa có bằng chứng board đang chạy Pocket.
+- `AP=OK` là thông báo của chương trình chưa có source trong repo, không xác minh beacon thực sự phát ra hoặc client kết nối thành công.
+- Đoạn log ngắn chưa thể loại trừ reset xảy ra muộn hơn. Cần theo dõi uptime khoảng 60 giây.
+- Với chương trình Test này, chưa có bằng chứng cho giả thuyết AP biến mất do đã chuyển sang Wi-Fi nhà. Các bước cấu hình Pocket bên dưới chỉ áp dụng sau khi xác nhận đang chạy Pocket.
+- Kiểm tra đầu tiên: chỉ USB, tháo toàn bộ ngoại vi và pin khi mất nguồn; đặt board thoáng, không áp anten vào kim loại hoặc pin, thử quét từ khoảng 0.5–1 m. Nếu không thay đổi, thử một cáp/cổng USB khác rồi lấy log 60 giây.
+- Nếu board trần vẫn không xuất hiện, cần source Wi-Fi Test để kiểm tra `ssid_hidden`, mode và vòng đời AP trước khi kết luận lỗi RF/phần cứng. Arduino ESP32 hỗ trợ cấu hình SSID ẩn; chưa biết chương trình hiện tại có dùng hay không.
+
+Trên Linux có NetworkManager, quét lại bằng `nmcli -f SSID,CHAN,SIGNAL device wifi list --rescan yes`. Chỉ chia sẻ dòng liên quan `NUNU-ESP32` hoặc báo không có; không cần gửi danh sách mạng xung quanh. Lệnh có thể cần vài giây để quét. Đây là phép kiểm tra bổ sung, không thay thế thử board trần.
 
 ## Kiểm tra nhanh nhất: giữ nguyên firmware và chỉ thay một yếu tố
 
@@ -60,6 +79,49 @@ Không có motor/servo trong ảnh này. Mic có hình dạng phù hợp loại 
 - GPIO2/8/9 là chân strapping. Tuy nhiên GPIO8 thấp riêng lẻ không ngăn boot bình thường khi GPIO9 cao. GPIO8 cần cao khi GPIO9 thấp để vào download mode. Không quy lỗi cho GPIO8 chỉ vì mic dùng chân này; không tự thêm pull-up hoặc đổi dây khi chưa có log/source.
 - GPIO20/21 còn là chân UART0 mặc định. Với OLED đang dùng hai chân này, ưu tiên serial qua cổng USB trực tiếp. Không đồng thời gắn USB-UART vào chúng cùng OLED.
 - Nếu sau này chạy pin: sơ đồ đưa điện áp pin trực tiếp vào chân 5V; chưa thấy khối nâng áp. Không thể mặc định mạch sạc xuất 5 V. Phải xác minh pin, regulator của board và điện áp khi có tải trước khi dùng sơ đồ nguồn đó. Không nối pin Li-ion trực tiếp vào chân 3V3.
+
+## Tiếp xúc điện, dòng tiêu thụ và cách thử từng module
+
+Người dùng có đồng hồ vạn năng và mỏ hàn; chưa cung cấp model đồng hồ.
+
+- Hàn đúng giúp cố định tiếp xúc giữa dây/chân và pad, không tự làm mạch tiêu thụ thêm dòng đáng kể. Dòng tải do mạch và chế độ hoạt động quyết định. Sau khi sửa tiếp xúc, dòng có thể tăng vì module trước đó mất nguồn nay hoạt động.
+- Không dựa vào cách cột dây trần qua lỗ GPIO. Nên hàn header vào board và dùng dây jumper/đầu cắm để tháo lắp. Nếu hàn dây trực tiếp, bọc cách điện phần nối và cố định dây tránh kéo pad. Mối hàn lạnh hoặc cầu thiếc vẫn gây lỗi.
+
+### Kiểm tra tiếp xúc khi đã ngắt nguồn
+
+1. Rút USB, ngắt pin và mọi nguồn ngoài. Cắm que đen COM, que đỏ cổng V/Ω theo ký hiệu đồng hồ; chọn thông mạch hoặc Ω.
+2. Chập hai que để biết số đo nền. Đo từ pad trên board đến đầu xa của dây, chạm pad thay vì chỉ chạm vào dây cả hai đầu. Một kết nối ngắn tốt có điện trở gần số đo khi chập que.
+3. Lay rất nhẹ dây khi không cấp nguồn. Số đo nhảy cao hoặc OL/bíp ngắt cho thấy tiếp xúc không ổn định. Tiếng bíp đơn thuần không chứng minh kết nối đủ tốt khi có tải.
+4. Kiểm tra chân kề nhau theo sơ đồ để tìm cầu thiếc. Đo giữa đường nguồn và GND: gần 0 Ω liên tục là dấu hiệu cần kiểm tra trước khi cấp nguồn; bíp thoáng qua có thể do tụ và không tự chứng minh chập.
+
+### Kiểm tra điện áp khi có nguồn
+
+Giữ que đỏ ở cổng V/Ω, chọn V DC (V với ký hiệu đường thẳng; thang 20 V nếu đồng hồ chỉnh tay). Que đen vào GND, que đỏ vào điểm cần đo. Tránh để đầu que chạm hai pad cùng lúc.
+
+- Board chỉ USB: đo chân 5V–GND và 3V3–GND, kỳ vọng lần lượt gần 5 V và 3.3 V; đường USB có thể có sụt áp tùy board.
+- Sau khi thêm module, đo ngay tại VCC/VIN–GND của module và lại tại 3V3 của ESP32. Chênh lệch rõ giữa nguồn board và nguồn module gợi ý lỗi dây/tiếp xúc.
+- Theo sơ đồ đã gửi: OLED và mic dùng 3V3, ampli dùng đường 5V. Chưa thử pin/mạch sạc trong phép kiểm tra này. Đồng hồ thường có thể bỏ sót sụt áp ngắn lúc Wi-Fi phát.
+
+### Nếu muốn biết dòng tiêu thụ
+
+Với nguồn USB, đồng hồ đo USB mắc giữa laptop và cáp thuận tiện hơn việc cắt đường nguồn. Nếu cần serial, thiết bị đo phải truyền dữ liệu USB. So sánh dòng với cùng trạng thái Wi-Fi/âm lượng; không dùng một ngưỡng mA chung để kết luận mọi module tốt/xấu.
+
+Đo dòng bằng đồng hồ vạn năng yêu cầu đúng cổng/thang A DC và mắc nối tiếp trong đường cấp nguồn đã ngắt ra; cần theo manual/model cụ thể về cầu chì và giới hạn thời gian. Không đặt đồng hồ ở thang A/mA rồi chạm hai que vào 5V và GND hoặc hai cực pin: sẽ tạo đường gần ngắn mạch. Không đo nhánh 5V ngoài rồi cắm thêm USB cấp song song. Sau khi đo dòng, chuyển que đỏ về V/Ω trước khi đo điện áp/thông mạch.
+
+### Thứ tự tháo lắp
+
+Trước mỗi thay đổi: rút USB, tháo tất cả dây của module cần loại trừ (cả nguồn lẫn tín hiệu), không để module mất VCC nhưng còn tín hiệu nối vào ESP32. Chỉ cấp nguồn lại sau khi đối chiếu sơ đồ và kiểm tra đầu dây trần.
+
+| Cấu hình | Điều kiện qua bước kiểm tra |
+| --- | --- |
+| ESP32 riêng, chỉ USB | AP thấy được, điện thoại kết nối làm clients tăng, uptime không reset trong khoảng 60 giây |
+| ESP32 gắn header đúng trên breadboard trống | Kết quả như board riêng; hai hàng chân được cách ly đúng nhóm lỗ |
+| Thêm riêng OLED | Điện áp tại OLED gần 3.3 V, AP và uptime ổn; chưa chứng minh màn hình hiển thị được |
+| Tháo OLED, thử riêng mic | Điện áp tại mic gần 3.3 V, AP và uptime ổn; chưa chứng minh thu âm được |
+| Tháo mic, thử riêng ampli chưa gắn loa | Điện áp tại VIN phù hợp đường 5V, AP và uptime ổn; chưa chứng minh phát âm thanh được |
+| Ghép dần các module đã qua kiểm tra | AP và uptime ổn sau mỗi lần thêm; bước gây lỗi được tháo và thử lại để xác nhận |
+
+Wi-Fi Test hiện tại không phải firmware kiểm tra chức năng ngoại vi. OLED cần chương trình quét I2C/hiển thị; mic cần I2S RX và thống kê mức tín hiệu; ampli/loa cần I2S TX với âm thử nhỏ phù hợp công suất loa. Chia sẻ BCLK/LRCLK theo ảnh chỉ có ý nghĩa khi firmware cấu hình I2S phù hợp. Trước khi nạp firmware test khác cần sao lưu; plan code phải được người dùng duyệt. Khi thử loa MAX98357A, nối giữa OUT+ và OUT−, không nối một đầu ra xuống GND.
 
 ## Đọc log trên máy hiện tại
 
@@ -139,6 +201,10 @@ Trước khi thay firmware, cần log board trần và cấu hình đầu tiên 
 Không có ứng dụng web, build config, lint config hoặc Playwright trong repo hiện tại. Đợt này chỉ thêm tài liệu, không có firmware build/test, E2E hay video phần cứng. Kiểm tra local: metadata/checksum binary, cú pháp công cụ hiện có, liên kết nội bộ và whitespace diff. Kết luận robot hoạt động cần được xác nhận trên board thật.
 
 ## Tài liệu tham chiếu
+
+- [Adafruit: Các lỗi mối hàn](https://learn.adafruit.com/adafruit-guide-excellent-soldering/common-problems)
+- [Fluke: Đo thông mạch](https://www.fluke.com/en-gb/learn/blog/digital-multimeters/how-to-test-for-continuity)
+- [Fluke: Ví dụ hướng dẫn đo dòng nối tiếp](https://assets.fluke.com/manuals/7x2x____iseng0200.pdf) — không thay thế manual của model người dùng đang có.
 
 - [Espressif: Boot mode selection](https://docs.espressif.com/projects/esptool/en/latest/esp32c3/advanced-topics/boot-mode-selection.html)
 - [Espressif: Power supply, strapping, UART](https://docs.espressif.com/projects/esp-hardware-design-guidelines/en/latest/esp32c3/schematic-checklist.html)

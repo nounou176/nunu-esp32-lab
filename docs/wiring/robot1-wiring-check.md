@@ -41,10 +41,12 @@ Mỗi lần cắm lại USB, mở lại monitor rồi gõ `r` để in lại bá
 | `b` | Phát tiếng bíp 1 kHz trong 0.6 giây qua ampli |
 | `t` | Đổi công suất phát Wi-Fi giữa 19.5 dBm và 8.5 dBm |
 | `w` | Quét lại Wi-Fi xung quanh (số mạng thấy và RSSI mạnh nhất) |
+| `i` | Tắt/bật xung clock I2S (GPIO1/2) để xem nó có làm nhiễu sóng Wi-Fi không |
+| `a` | Chuyển giữa chế độ AP+STA và chỉ AP |
 
 Dòng trạng thái in mỗi 2 giây:
 
-```
+```text
 [   42s] reset=POWERON boots=1 | AP clients=1 tx=19.5dBm | pins=OK | oled=0x3C OK(err=0) | mic=-55 dBFS | btn=up | heap=...
 ```
 
@@ -69,6 +71,7 @@ Làm đúng vòng này cho từng dây trong bảng ở mục 5, không nối nh
 **B. Nối đúng một dây** theo bảng.
 
 **C. Đo bằng đồng hồ vạn năng (còn rút USB)**, chế độ thông mạch (bíp) hoặc Ω:
+
 1. Que đặt lên **chân kim loại của ESP32** và **chân kim loại của module**, không đặt lên đầu dây. Phải bíp, điện trở gần như số đo khi chập hai que.
 2. Giữ que, **lay nhẹ dây và chân**. Tiếng bíp phải liên tục; nếu ngắt quãng là tiếp xúc lỏng, sửa trước khi đi tiếp.
 3. Đo chân module vừa nối với **hai chân ESP32 kế bên** (ví dụ vừa nối GPIO2 thì đo với GPIO1 và GPIO3). Phải **không** bíp.
@@ -86,7 +89,7 @@ Ghi kết quả từng bước. Nếu bước nào hỏng: rút USB, tháo **ch�
 
 | # | Việc làm | Kết quả mong đợi |
 | --- | --- | --- |
-| 0.1 | Board trần, chỉ USB | `pins=OK`, mọi GPIO `open` (GPIO8 có thể `HIGH: pull-up present` vì LED trên board), `oled=none`, `mic=STUCK`. Wi-Fi OK. **Ghi lại** dòng `Wi-Fi receive check` (số mạng, RSSI mạnh nhất). |
+| 0.1 | Board trần, chỉ USB | `pins=OK`, mọi GPIO `open` trừ GPIO2 và GPIO8 là `HIGH: pull-up present` (điện trở kéo lên có sẵn trên board), `oled=none`, `mic=STUCK`. Ngay sau khi nạp, `reset=OTHER` là bình thường; rút cắm USB lại sẽ thấy `POWERON`. Wi-Fi OK. **Ghi lại** dòng `Wi-Fi receive check` (số mạng, RSSI mạnh nhất). |
 | 0.2 | Hàn header, cắm board lên breadboard, chưa nối dây | Giống 0.1. RSSI mạnh nhất không giảm quá ~10 dB so với 0.1. |
 
 Nếu 0.1 đã mất Wi-Fi hoặc điện thoại không kết nối được: gõ `t` chuyển sang 8.5 dBm rồi thử lại. Chạy được ở 8.5 dBm mà không chạy ở 19.5 dBm là lỗi của board/anten, không phải lỗi dây; báo lại để mình chỉnh Pocket build với công suất thấp hơn.

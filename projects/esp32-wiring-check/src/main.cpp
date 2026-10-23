@@ -8,7 +8,9 @@
 #include <Wire.h>
 #include <driver/i2s.h>
 #include <esp_system.h>
+#include <esp_wifi.h>
 #include <math.h>
+#include <soc/gpio_periph.h>
 #include <stdarg.h>
 
 // Pin map from pocket-wall-e-c3/config.h in the Pocket ESP AI source.
@@ -34,8 +36,9 @@ struct PinSpec {
 };
 
 // GPIO9 (BOOT button) and GPIO18/19 (USB) are never touched.
+// GPIO2 and GPIO8 are strapping pins with an on-board pull-up on the SuperMini.
 const PinSpec kPins[] = {
-    {0, "unused", false},   {1, "WS/LRC", false},   {2, "BCLK/SCK", false},
+    {0, "unused", false},   {1, "WS/LRC", false},   {2, "BCLK/SCK", true},
     {3, "AMP DIN", false},  {4, "unused", false},   {5, "unused", false},
     {6, "unused", false},   {7, "unused", false},   {8, "MIC SD", true},
     {10, "BUTTON", false},  {20, "OLED SCL", true}, {21, "OLED SDA", true},
@@ -52,7 +55,9 @@ int pinIssues = 0;
 bool oledFound = false;
 uint32_t oledErrors = 0;
 bool i2sOk = false;
-bool lowTxPower = false;
+bool i2sRunning = false;
+bool lowTxPower = true;  // this SuperMini's AP is invisible at full power; boot low
+bool apOnly = false;
 int scanCount = 0;
 int scanBestRssi = 0;
 
@@ -82,7 +87,7 @@ const char* resetReasonName(esp_reset_reason_t r) {
     case ESP_RST_WDT: return "WDT";
     case ESP_RST_DEEPSLEEP: return "DEEPSLEEP";
     case ESP_RST_BROWNOUT: return "BROWNOUT (power dip!)";
-    default: return "OTHER";
+    default: return "OTHER (USB/flash reset)";
   }
 }
 
@@ -109,6 +114,11 @@ void checkPins() {
     if (up[i] == 0) {
       verdict = "LOW: tied to GND or module unpowered";
       issue = g != PIN_BUTTON;  // a held button is fine
+      if (g == PIN_MIC_SD) {
+        // A powered INMP441 drives SD low until SCK starts; an unpowered one leaves it HIGH.
+        verdict = "LOW: driven by powered mic";
+        issue = false;
+      }
     } else if (down[i] == 1) {
       verdict = kPins[i].highOk ? "HIGH: pull-up present" : "HIGH: tied to 3V3/5V?";
       issue = !kPins[i].highOk;
@@ -149,7 +159,9 @@ void startWifi() {
   WiFi.persistent(false);
   WiFi.mode(WIFI_AP_STA);  // STA side is only used for the receive check scan
   const bool ok = WiFi.softAP(AP_SSID, nullptr, 1, 0, 4);
-  logLine("Wi-Fi AP %s: %s (open, channel 1)", AP_SSID, ok ? "started" : "FAILED");
+  WiFi.setTxPower(lowTxPower ? WIFI_POWER_8_5dBm : WIFI_POWER_19_5dBm);
+  logLine("Wi-Fi AP %s: %s (open, channel 1, tx %.1f dBm)", AP_SSID, ok ? "started" : "FAILED",
+          WiFi.getTxPower() / 4.0f);
   scanNetworks();
   logLine("Wi-Fi receive check: %d networks seen, strongest %d dBm", scanCount, scanBestRssi);
 }
@@ -240,7 +252,7 @@ void resetMicWindow() {
 void readMic() {
   static int32_t buf[256];
   size_t bytes = 0;
-  if (!i2sOk || i2s_read(I2S_PORT, buf, sizeof(buf), &bytes, pdMS_TO_TICKS(20)) != ESP_OK) return;
+  if (!i2sRunning || i2s_read(I2S_PORT, buf, sizeof(buf), &bytes, pdMS_TO_TICKS(20)) != ESP_OK) return;
   const int n = bytes / sizeof(int32_t);
   for (int i = 0; i < n; ++i) {
     const int slot = i & 1;
@@ -267,7 +279,36 @@ void describeMic(char* out, size_t len) {
     return;
   }
   const float dbfs = 20.0f * log10f((span / 2.0f) / 8388608.0f);
-  snprintf(out, len, "%.0f dBFS%s", dbfs, dbfs > -6 ? " (too loud: SD floating?)" : "");
+  // Per-slot level: with L/R tied to GND the mic drives one slot only; audio on both
+  // slots, or on the other slot, means the L/R pin is floating.
+  float slotDb[2];
+  for (int s = 0; s < 2; ++s) {
+    const int32_t sp = micMax[s] - micMin[s];
+    slotDb[s] = sp > 0 ? 20.0f * log10f((sp / 2.0f) / 8388608.0f) : -999.0f;
+  }
+  snprintf(out, len, "%.0f dBFS%s s0=%.0f s1=%.0f", dbfs,
+           dbfs > -6 ? " (too loud: SD floating?)" : "", slotDb[0], slotDb[1]);
+}
+
+void recordMic() {
+  // Streams 4 s of slot 0 as raw 16-bit little-endian PCM (16 kHz mono) between text markers,
+  // so the laptop can turn it into a WAV and the user can hear what WakeNet hears.
+  const int kSamples = SAMPLE_RATE * 4;
+  Serial.printf("PCMSTART %d\n", kSamples * 2);
+  static int32_t buf[256];
+  static int16_t pcm[128];
+  int sent = 0;
+  while (sent < kSamples) {
+    size_t bytes = 0;
+    if (i2s_read(I2S_PORT, buf, sizeof(buf), &bytes, pdMS_TO_TICKS(100)) != ESP_OK) break;
+    int n = 0;
+    for (int i = 0; i + 1 < (int)(bytes / sizeof(int32_t)) && sent + n < kSamples; i += 2) {
+      pcm[n++] = (int16_t)(buf[i] >> 16);
+    }
+    Serial.write(reinterpret_cast<uint8_t*>(pcm), n * sizeof(int16_t));
+    sent += n;
+  }
+  Serial.print("\nPCMEND\n");
 }
 
 void beep() {
@@ -283,13 +324,14 @@ void beep() {
 }
 
 void printStatus() {
-  char mic[48];
+  char mic[72];
   describeMic(mic, sizeof(mic));
   const char* oled = !oledFound ? "none" : (oledErrors ? "ERRORS" : "0x3C OK");
-  Serial.printf("[%5lus] reset=%s boots=%lu | AP clients=%d tx=%.1fdBm | pins=%s | oled=%s(err=%lu)"
-                " | mic=%s | btn=%s | heap=%lu\n",
-                millis() / 1000, resetName, (unsigned long)rtcBoots, WiFi.softAPgetStationNum(),
-                WiFi.getTxPower() / 4.0f, pinIssues ? "CHECK" : "OK", oled,
+  Serial.printf("[%5lus] reset=%s boots=%lu | %s clients=%d tx=%.1fdBm i2s=%s | pins=%s"
+                " | oled=%s(err=%lu) | mic=%s | btn=%s | heap=%lu\n",
+                millis() / 1000, resetName, (unsigned long)rtcBoots, apOnly ? "AP" : "AP+STA",
+                WiFi.softAPgetStationNum(), WiFi.getTxPower() / 4.0f, i2sRunning ? "on" : "OFF",
+                pinIssues ? "CHECK" : "OK", oled,
                 (unsigned long)oledErrors, mic, digitalRead(PIN_BUTTON) ? "up" : "DOWN",
                 (unsigned long)ESP.getFreeHeap());
 }
@@ -313,9 +355,46 @@ void handleCommands() {
         scanNetworks();
         Serial.printf("Wi-Fi receive check: %d networks seen, strongest %d dBm\n", scanCount,
                       scanBestRssi);
+        if (apOnly) WiFi.mode(WIFI_AP);  // the scan re-enables STA
+        break;
+      case 'p': {
+        // Steps down through TX power levels (quarter-dBm) to find the highest one that works.
+        // 10 dBm is the lowest value ESP-IDF's CONFIG_ESP_PHY_MAX_WIFI_TX_POWER accepts.
+        static const int8_t kLevels[] = {80, 68, 60, 52, 44, 40, 34};
+        static int level = 0;
+        level = (level + 1) % (int)sizeof(kLevels);
+        esp_wifi_set_max_tx_power(kLevels[level]);
+        Serial.printf("tx power -> %.1f dBm (requested %.1f)\n", WiFi.getTxPower() / 4.0f,
+                      kLevels[level] / 4.0f);
+        break;
+      }
+      case 'i':
+        // Stops the 1 MHz I2S clocks to see whether they disturb the radio.
+        if (!i2sOk) break;
+        i2sRunning = !i2sRunning;
+        if (i2sRunning) i2s_start(I2S_PORT); else i2s_stop(I2S_PORT);
+        Serial.printf("i2s -> %s\n", i2sRunning ? "on" : "OFF");
+        break;
+      case 'g':
+        // Samples the live I2S clock pads: a clock toggles (~50% high), a hard short stays at 0%.
+        for (int g : {PIN_I2S_WS, PIN_I2S_BCLK}) {
+          PIN_INPUT_ENABLE(GPIO_PIN_MUX_REG[g]);
+          int high = 0;
+          for (int k = 0; k < 10000; ++k) high += gpio_get_level(static_cast<gpio_num_t>(g));
+          Serial.printf("GPIO%d live level: high %d.%02d%% of samples\n", g, high / 100, high % 100);
+        }
+        break;
+      case 'm':
+        recordMic();
+        break;
+      case 'a':
+        apOnly = !apOnly;
+        WiFi.mode(apOnly ? WIFI_AP : WIFI_AP_STA);
+        Serial.printf("wifi mode -> %s\n", apOnly ? "AP" : "AP+STA");
         break;
       case 'h':
-        Serial.println("commands: r=report b=beep t=toggle tx power w=wifi scan");
+        Serial.println(
+            "commands: r=report b=beep t=toggle tx power p=next tx level w=wifi scan i=toggle i2s a=toggle AP-only");
         break;
     }
   }
@@ -340,10 +419,11 @@ void setup() {
   scanI2c();
   if (oledFound) oledInit();
   i2sOk = startI2s();
+  i2sRunning = i2sOk;
   logLine("I2S BCLK=GPIO2 WS=GPIO1 DOUT=GPIO3 DIN=GPIO8: %s", i2sOk ? "running" : "FAILED");
   pinMode(PIN_BUTTON, INPUT_PULLUP);
   resetMicWindow();
-  logLine("commands: r=report b=beep t=toggle tx power w=wifi scan");
+  logLine("commands: r=report b=beep t=toggle tx power p=next tx level w=wifi scan i=toggle i2s a=toggle AP-only");
 }
 
 void loop() {
